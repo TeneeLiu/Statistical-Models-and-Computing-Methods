@@ -1,0 +1,157 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Dec 12 16:40:15 2024
+
+@author: 狼
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.mixture import GaussianMixture
+
+# Initialize distribution parameters
+mu1 = np.array([1, 2])
+sigma1 = np.array([[1, 0], [0, 0.5]])
+mu2 = np.array([-1, -1])
+sigma2 = np.array([[1, 0], [0, 1]])
+
+# Generate data points
+data1 = np.random.multivariate_normal(mu1, sigma1, 1000)
+data2 = np.random.multivariate_normal(mu2, sigma2, 1000)
+
+X = np.concatenate([data1, data2])  # Combine data points [2000, 2]
+
+# Shuffle X to randomize the data points
+np.random.shuffle(X)
+
+plt.scatter(data1[:, 0], data1[:, 1], label='Class 1')
+plt.scatter(data2[:, 0], data2[:, 1], label='Class 2')
+plt.xlabel('X')
+plt.ylabel('Y')
+plt.title('Scatter Plot of Data Points')
+plt.legend()
+plt.show()
+
+import math
+# Function to fit Gaussian Mixture Model
+def fit_gaussian_mixture_model(X, n_components=2, max_iter=100):
+    # Combine data
+    gmm = GaussianMixture(n_components=n_components, max_iter=max_iter)
+    gmm.fit(X)
+
+    return gmm.means_, gmm.covariances_, gmm.weights_
+
+# Custom fit Gaussian Mixture Model function
+def my_fit_GMM(X, n_components=2, max_iter=1000):
+    # Sort data
+    n_samples, n_features = X.shape
+    X_SortIndex = np.lexsort((X[:, 0], X[:, 1]))
+    newArr = []
+    for idx in X_SortIndex:
+        newArr.append(X[idx])
+    X = np.array(newArr)
+
+    # Initial mean vectors and covariance matrices
+    mu = X[:n_components, :]  # [n_components, n_features]
+    cov = np.ones(shape=(n_components, n_features, n_features))  # [n_components, n_features, n_features]
+    interval = n_samples // n_components
+
+    for i in range(n_components):
+        cov[i, ...] = np.cov(np.transpose(X[i*interval: (i+1)*interval, ...]))
+        mu[i, ...] = np.mean(X[i*interval: (i+1)*interval, ...], axis=0)
+    weights = np.ones(shape=(n_components,)) / n_components  # [n_components, ]
+
+    # Expectation step
+    expectation = np.zeros(shape=(n_samples, n_components))
+    old_mu = np.copy(mu)
+
+    X = np.matrix(X)
+    mu = np.matrix(mu)
+    expectation = np.matrix(expectation)
+
+    for iteration in range(max_iter):
+        old_mu = np.copy(mu)
+        # Update expectations
+        for i in range(n_samples):
+            for j in range(n_components):
+                expectation[i, j] = math.exp(-(X[i, :] - mu[j, :]) * np.linalg.inv(cov[j, ...]) * np.transpose(X[i, :] - mu[j, :]) / 2) / np.sqrt(np.linalg.det(cov[j, ...]))
+                expectation[i, j] *= weights[j]
+
+        t = np.sum(expectation, axis=1).reshape(-1, 1)
+        expectation = expectation / t
+
+        # Update model parameters (mean vectors)
+        sum_E = np.zeros(shape=(n_components,))
+        for j in range(n_components):
+            sum_E[j] = np.sum(expectation[:, j])
+            mu[j, ...] = np.sum(np.multiply(expectation[:, j], X), axis=0) / sum_E[j]
+
+        # Update model parameters (covariance matrices) and mixing coefficients
+        for j in range(n_components):
+            cov_s = np.matrix(np.zeros((n_features, n_features)))
+            for i in range(n_samples):
+                cov_i = (X[i, ...] - mu[j, ...]).T * (X[i, ...] - mu[j, ...])
+                cov_s = cov_s + np.multiply(expectation[i, j], cov_i)
+            cov[j, ...] = np.array(cov_s) / sum_E[j]
+            weights[j] = sum_E[j] / n_samples
+
+        # Convergence check
+        if np.abs(np.linalg.det(old_mu - mu)) < 1e-6:
+            break
+
+    means = np.array(mu)
+    return means, cov, weights
+
+# Use my_fit_GMM to fit the distribution and output the estimated parameters
+means, cov, weights = my_fit_GMM(X)
+
+print("Data1.Means:")
+print(means[0])
+print("Data2.Means:")
+print(means[1])
+
+print("Data1.Covariances:")
+print(cov[0])
+print("Data2.Covariances:")
+print(cov[1])
+
+print("Weights:")
+print(weights)
+
+from scipy.stats import multivariate_normal
+
+# Function to draw the results of the mixture Gaussian probability density
+def draw_results(means, covariances, weights):
+    # Define parameters for two 2D Gaussian distributions
+    m1 = means[0]
+    s1 = covariances[0]
+    m2 = means[1]
+    s2 = covariances[1]
+
+    # Generate grid points
+    x, y = np.mgrid[-5:5:.01, -5:5:.01]
+    pos = np.dstack((x, y))
+
+    # Calculate probability density values for each point
+    rv1 = multivariate_normal(m1, s1)
+    rv2 = multivariate_normal(m2, s2)
+    z1 = rv1.pdf(pos)
+    z2 = rv2.pdf(pos)
+
+    # Mixture of two Gaussian distributions' probability density functions
+    z = weights[0] * z1 + weights[1] * z2  # Set mixing proportions
+
+    # Plot 3D graph
+    fig = plt.figure(figsize=(5, 10))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot_surface(x, y, z, cmap='viridis')
+
+    # Set axis labels and title
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Probability Density')
+    ax.set_title('3D Plot of Mixture Gaussian Probability Density')
+
+    plt.show()
+
+draw_results(means, cov, weights)
